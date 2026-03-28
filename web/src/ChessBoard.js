@@ -588,7 +588,9 @@ export default function ChessBoard() {
                 <input
                   type="text"
                   value={pgnTags.event}
-                  onChange={(e) => handlePgnTagFieldChange("event", e.target.value)}
+                  onChange={(e) =>
+                    handlePgnTagFieldChange("event", e.target.value)
+                  }
                 />
               </label>
               <label>
@@ -596,7 +598,9 @@ export default function ChessBoard() {
                 <input
                   type="text"
                   value={pgnTags.site}
-                  onChange={(e) => handlePgnTagFieldChange("site", e.target.value)}
+                  onChange={(e) =>
+                    handlePgnTagFieldChange("site", e.target.value)
+                  }
                 />
               </label>
               <label>
@@ -604,7 +608,9 @@ export default function ChessBoard() {
                 <input
                   type="text"
                   value={pgnTags.white}
-                  onChange={(e) => handlePgnTagFieldChange("white", e.target.value)}
+                  onChange={(e) =>
+                    handlePgnTagFieldChange("white", e.target.value)
+                  }
                 />
               </label>
               <label>
@@ -612,7 +618,9 @@ export default function ChessBoard() {
                 <input
                   type="text"
                   value={pgnTags.black}
-                  onChange={(e) => handlePgnTagFieldChange("black", e.target.value)}
+                  onChange={(e) =>
+                    handlePgnTagFieldChange("black", e.target.value)
+                  }
                 />
               </label>
               <label>
@@ -620,7 +628,9 @@ export default function ChessBoard() {
                 <input
                   type="text"
                   value={pgnTags.round}
-                  onChange={(e) => handlePgnTagFieldChange("round", e.target.value)}
+                  onChange={(e) =>
+                    handlePgnTagFieldChange("round", e.target.value)
+                  }
                 />
               </label>
               <label>
@@ -628,7 +638,9 @@ export default function ChessBoard() {
                 <input
                   type="text"
                   value={pgnTags.timeControl}
-                  onChange={(e) => handlePgnTagFieldChange("timeControl", e.target.value)}
+                  onChange={(e) =>
+                    handlePgnTagFieldChange("timeControl", e.target.value)
+                  }
                 />
               </label>
               <label>
@@ -636,7 +648,9 @@ export default function ChessBoard() {
                 <input
                   type="text"
                   value={pgnTags.whiteElo}
-                  onChange={(e) => handlePgnTagFieldChange("whiteElo", e.target.value)}
+                  onChange={(e) =>
+                    handlePgnTagFieldChange("whiteElo", e.target.value)
+                  }
                 />
               </label>
               <label>
@@ -644,7 +658,9 @@ export default function ChessBoard() {
                 <input
                   type="text"
                   value={pgnTags.blackElo}
-                  onChange={(e) => handlePgnTagFieldChange("blackElo", e.target.value)}
+                  onChange={(e) =>
+                    handlePgnTagFieldChange("blackElo", e.target.value)
+                  }
                 />
               </label>
               <label>
@@ -662,7 +678,9 @@ export default function ChessBoard() {
                 <input
                   type="text"
                   value={pgnTags.eco}
-                  onChange={(e) => handlePgnTagFieldChange("eco", e.target.value)}
+                  onChange={(e) =>
+                    handlePgnTagFieldChange("eco", e.target.value)
+                  }
                 />
               </label>
               <label>
@@ -670,7 +688,9 @@ export default function ChessBoard() {
                 <input
                   type="text"
                   value={pgnTags.endTime}
-                  onChange={(e) => handlePgnTagFieldChange("endTime", e.target.value)}
+                  onChange={(e) =>
+                    handlePgnTagFieldChange("endTime", e.target.value)
+                  }
                 />
               </label>
               <label className="pgn-full-width">
@@ -678,7 +698,9 @@ export default function ChessBoard() {
                 <input
                   type="text"
                   value={pgnTags.link}
-                  onChange={(e) => handlePgnTagFieldChange("link", e.target.value)}
+                  onChange={(e) =>
+                    handlePgnTagFieldChange("link", e.target.value)
+                  }
                 />
               </label>
             </div>
