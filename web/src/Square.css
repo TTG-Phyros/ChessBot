@@ -1,0 +1,47 @@
+.square {
+  width: 80px;
+  height: 80px;
+  border: none;
+  font-size: 3.5rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.1s;
+}
+
+.square.light {
+  background-color: #f0d9b5;
+}
+
+.square.dark {
+  background-color: #b58863;
+}
+
+.square:hover {
+  box-shadow: inset 0 0 20px rgba(0, 0, 0, 0.1);
+}
+
+.square.selected {
+  background-color: #baca44;
+  box-shadow: inset 0 0 10px rgba(107, 114, 12, 0.6);
+}
+
+.square.legal-target::before {
+  content: "";
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  background-color: rgba(32, 104, 160, 0.4);
+  border-radius: 50%;
+  z-index: 0;
+}
+
+.piece {
+  position: relative;
+  z-index: 1;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  user-select: none;
+}

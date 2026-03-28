@@ -1,0 +1,9 @@
+chess-bot
+chess-api
+test-minimax
+.DS_Store
+*.swp
+*.swo
+*~
+.vscode/
+.env.local
