@@ -9,7 +9,12 @@ RUN apt-get update \
 COPY . .
 
 RUN make chess-bot
+RUN make chess-bot-iterdeep
 RUN make chess-bot-service
+RUN make test-engine-core-minimax
+RUN make test-perft-minimax
+RUN make test-engine-core-iterdeep
+RUN make test-perft-iterdeep
 
 FROM alpine:latest
 
@@ -17,9 +22,19 @@ RUN apk add --no-cache libmicrohttpd json-c libc6-compat
 
 WORKDIR /app
 
+RUN mkdir -p /app/logs
+
 COPY --from=builder /app/chess-bot-service .
 COPY --from=builder /app/chess-bot .
+COPY --from=builder /app/chess-bot-iterdeep .
+COPY --from=builder /app/test-engine-core-minimax ./test-engine-core-minimax
+COPY --from=builder /app/test-perft-minimax ./test-perft-minimax
+COPY --from=builder /app/test-engine-core-iterdeep ./test-engine-core-iterdeep
+COPY --from=builder /app/test-perft-iterdeep ./test-perft-iterdeep
 
 EXPOSE 5001
+
+# Default to minimax bot, can be overridden with BOT_TYPE environment variable
+ENV BOT_TYPE=minimax
 
 CMD ["./chess-bot-service"]

@@ -6,7 +6,11 @@ services:
     image: minimax-chess-bot-service:latest
     command: ["./chess-bot-service"]
     environment:
+      BOT_TYPE: "${BOT_TYPE:-minimax}"
       BOT_DEPTH: "${BOT_DEPTH:-4}"
+      BOT_EVAL: "${BOT_EVAL:-basic}"
+    volumes:
+      - ./logs:/app/logs
     expose:
       - 5001
 

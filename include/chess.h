@@ -2,6 +2,7 @@
 #define CHESS_H
 
 #include <stddef.h>
+#include <stdio.h>
 
 #define MAX_MOVES 256
 #define CHECKMATE_SCORE 100000
@@ -63,7 +64,13 @@ int generate_legal_moves(const Board *board, Move moves[MAX_MOVES]);
 void apply_move(const Board *board, const Move *move, Board *out_board);
 int is_in_check(const Board *board, int side);
 
+int evaluate_board_basic(const Board *board);
+int evaluate_board_advanced(const Board *board);
+int evaluate_board_tactical(const Board *board);
+void set_evaluation_profile(const char *profile);
+const char *get_evaluation_profile(void);
 int evaluate_board(const Board *board);
 int choose_best_move(const Board *board, int depth, Move *best_move);
+int choose_best_move_with_debug(const Board *board, int depth, Move *best_move, FILE *debug_log);
 
 #endif

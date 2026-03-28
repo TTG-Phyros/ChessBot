@@ -114,7 +114,8 @@ static int forward_request(
     struct MHD_Connection *connection,
     const char *method,
     const char *path,
-    const char *body
+    const char *body,
+    long timeout_seconds
 ) {
     CURL *curl;
     CURLcode curl_result;
@@ -136,7 +137,7 @@ static int forward_request(
     curl_easy_setopt(curl, CURLOPT_URL, url);
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_buffer);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT, bot_timeout_seconds);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout_seconds);
 
     if (strcmp(method, "POST") == 0) {
         curl_easy_setopt(curl, CURLOPT_POST, 1L);
@@ -219,7 +220,11 @@ static enum MHD_Result request_handler(
     }
 
     if (strcmp(method, "GET") == 0 && strcmp(url, "/api/board") == 0) {
-        return forward_request(connection, "GET", "/bot/board", NULL);
+        return forward_request(connection, "GET", "/bot/board", NULL, bot_timeout_seconds);
+    }
+
+    if (strcmp(method, "GET") == 0 && strcmp(url, "/api/config") == 0) {
+        return forward_request(connection, "GET", "/bot/config", NULL, bot_timeout_seconds);
     }
 
     if (*con_cls == NULL) {
@@ -273,11 +278,18 @@ static enum MHD_Result request_handler(
         }
 
         if (strcmp(url, "/api/move") == 0) {
-            return forward_request(connection, "POST", "/bot/move", ctx->body);
+            return forward_request(connection, "POST", "/bot/move", ctx->body, bot_timeout_seconds);
         }
         if (strcmp(url, "/api/reset") == 0) {
-            return forward_request(connection, "POST", "/bot/reset", ctx->body);
+            return forward_request(connection, "POST", "/bot/reset", ctx->body, bot_timeout_seconds);
         }
+        if (strcmp(url, "/api/tests") == 0) {
+            return forward_request(connection, "POST", "/bot/tests", ctx->body, bot_timeout_seconds);
+        }
+        if (strcmp(url, "/api/pgn-tags") == 0) {
+            return forward_request(connection, "POST", "/bot/pgn-tags", ctx->body, bot_timeout_seconds);
+        }
+
         return send_error_json_response(connection, MHD_HTTP_NOT_FOUND, "Not found");
     }
 

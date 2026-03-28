@@ -1,5 +1,7 @@
 #include "chess.h"
 
+#include <stdio.h>
+
 static int negamax(const Board *board, int depth, int alpha, int beta, int ply) {
     Move moves[MAX_MOVES];
     int count = generate_legal_moves(board, moves);
@@ -34,7 +36,7 @@ static int negamax(const Board *board, int depth, int alpha, int beta, int ply) 
     return alpha;
 }
 
-int choose_best_move(const Board *board, int depth, Move *best_move) {
+static int choose_best_move_at_depth(const Board *board, int depth, Move *best_move) {
     Move moves[MAX_MOVES];
     int count = generate_legal_moves(board, moves);
     int best_score = -CHECKMATE_SCORE;
@@ -65,4 +67,39 @@ int choose_best_move(const Board *board, int depth, Move *best_move) {
     }
 
     return best_score;
+}
+
+int choose_best_move_with_debug(const Board *board, int depth, Move *best_move, FILE *debug_log) {
+    int d;
+    int score = 0;
+
+    if (!best_move) {
+        return 0;
+    }
+
+    if (depth < 1) {
+        depth = 1;
+    }
+
+    for (d = 1; d <= depth; d++) {
+        Move depth_best_move;
+        char uci[6];
+
+        score = choose_best_move_at_depth(board, d, &depth_best_move);
+        if (d == depth) {
+            *best_move = depth_best_move;
+        }
+
+        if (debug_log) {
+            move_to_uci(&depth_best_move, uci);
+            fprintf(debug_log, "depth=%d best=%s score=%d\n", d, uci, score);
+            fflush(debug_log);
+        }
+    }
+
+    return score;
+}
+
+int choose_best_move(const Board *board, int depth, Move *best_move) {
+    return choose_best_move_with_debug(board, depth, best_move, NULL);
 }

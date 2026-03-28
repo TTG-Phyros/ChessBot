@@ -14,7 +14,7 @@ static int piece_value(int piece) {
     }
 }
 
-int evaluate_board(const Board *board) {
+int evaluate_board_basic(const Board *board) {
     int score = 0;
     int sq;
 

@@ -7,3 +7,5 @@ test-minimax
 *~
 .vscode/
 .env.local
+logs/*.log
+!logs/.gitkeep

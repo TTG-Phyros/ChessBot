@@ -26,9 +26,12 @@ A complete chess project built around a C engine with a split backend:
 - `include/chess.h`: shared public API
 - `src/board.c`: board state, FEN parser, UCI parser
 - `src/movegen.c`: legal move generation and check detection
-- `src/eval.c`: static evaluation
-- `src/minimax.c`: alpha-beta negamax search
-- `src/main.c`: CLI entrypoint + protocol mode (`--protocol`) used by bot adapter
+- `eval/basic.c`: basic material evaluation profile
+- `eval/advanced.c`: advanced evaluation profile (material + positional + mobility)
+- `eval/tactical.c`: tactical profile (pressure + attacking opportunities)
+- `eval/select.c`: runtime evaluation profile selector
+- `bots/minimax/src/minimax.c`: alpha-beta negamax search
+- `bots/minimax/src/main.c`: CLI entrypoint + protocol mode (`--protocol`) used by bot adapter
 - `src/api.c`: HTTP API proxy (no engine logic)
 - `src/bot_service.c`: bot HTTP adapter (stdin/stdout bridge to `chess-bot --protocol`)
 
@@ -87,7 +90,7 @@ Request flow for a move:
 1. Web sends `POST /api/move`.
 2. API proxy forwards to bot adapter (`/bot/move`).
 3. Bot adapter writes `move <uci>` to `chess-bot --protocol`.
-4. `main.c` computes and returns JSON.
+4. The selected bot executable computes and returns JSON.
 5. Adapter returns JSON to API, API returns JSON to web.
 
 ## Ways to launch
@@ -153,6 +156,25 @@ npm start
 
 The app runs on http://localhost:3000.
 
+## Bot debug logs
+
+When debug mode is enabled from the web UI (`debug=true`), bot logs are written outside Docker to:
+
+- `./logs` on the host (repo root)
+
+The `bot` service mounts this folder as `/app/logs` in the container.
+
+Each run creates a dated file with algorithm/eval/depth in the name:
+
+- `logs/YYYYMMDD-HHMMSS_<bot>_<eval>_d<depth>_<label>.log`
+
+Each file starts with a banner containing:
+
+- algorithm name
+- evaluation profile
+- runtime parameters (depth and mode)
+- start timestamp
+
 ## Testing
 
 The project contains two complementary test families.
@@ -165,12 +187,17 @@ Build + run:
 make test
 ```
 
-This executes `tests/test_minimax.c` and checks things like:
+This executes core-rule test suites and checks things like:
 
 - legal moves from start position
 - checkmate detection
 - castling generation
 - en passant legality/application
+
+This now runs shared core tests for both bot variants:
+
+- `./test-engine-core-minimax`
+- `./test-engine-core-iterdeep`
 
 ### B) Perft tests (move generation correctness)
 
@@ -181,6 +208,11 @@ make test-perft
 ```
 
 Perft compares generated node counts against known reference counts on multiple chess positions. This is the strongest guardrail against subtle move generation bugs.
+
+This now runs perft for both bot variants:
+
+- `./test-perft-minimax`
+- `./test-perft-iterdeep`
 
 Helpful runtime flags for perft:
 
@@ -248,6 +280,7 @@ Example move request:
 ## Notes
 
 - Engine depth is controlled by `BOT_DEPTH` (default fallback is 4 when unset/invalid)
+- Evaluation profile is controlled by `BOT_EVAL` (`basic`, `advanced`, or `tactical`, default `basic`)
 - API request timeout is controlled by `BOT_TIMEOUT_SECONDS` (default 60)
 - Web UI applies your move immediately, then shows a "bot is thinking" indicator while waiting for response
 - No opening book or endgame tablebase yet
