@@ -23,6 +23,7 @@
 #define EVAL_BASIC "basic"
 #define EVAL_ADVANCED "advanced"
 #define EVAL_TACTICAL "tactical"
+#define EVAL_PHASED "phased"
 #define DEBUG_LOG_DIR "logs"
 
 struct connection_context {
@@ -186,7 +187,8 @@ static int is_valid_eval_profile(const char *value) {
     return value && (
         strcmp(value, EVAL_BASIC) == 0 ||
         strcmp(value, EVAL_ADVANCED) == 0 ||
-        strcmp(value, EVAL_TACTICAL) == 0
+        strcmp(value, EVAL_TACTICAL) == 0 ||
+        strcmp(value, EVAL_PHASED) == 0
     );
 }
 
@@ -638,7 +640,7 @@ static int parse_move_or_reset_config(
     if (field_status > 0) {
         if (!is_valid_eval_profile(parsed_eval_profile)) {
             if (error && error_size > 0) {
-                snprintf(error, error_size, "'eval' must be one of: basic, advanced, tactical");
+                snprintf(error, error_size, "'eval' must be one of: basic, advanced, tactical, phased");
             }
             return 0;
         }

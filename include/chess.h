@@ -67,6 +67,7 @@ int is_in_check(const Board *board, int side);
 int evaluate_board_basic(const Board *board);
 int evaluate_board_advanced(const Board *board);
 int evaluate_board_tactical(const Board *board);
+int evaluate_board_phased(const Board *board);
 void set_evaluation_profile(const char *profile);
 const char *get_evaluation_profile(void);
 int evaluate_board(const Board *board);

@@ -277,6 +277,9 @@ export default function BotConfig({
                     <option value="tactical">
                       Tactical (pression tactique + attaques)
                     </option>
+                    <option value="phased">
+                      Phased (PST + securite roi + structure pions + mobilite)
+                    </option>
                   </select>
                 </div>
 

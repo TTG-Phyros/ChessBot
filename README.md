@@ -29,6 +29,7 @@ A complete chess project built around a C engine with a split backend:
 - `eval/basic.c`: basic material evaluation profile
 - `eval/advanced.c`: advanced evaluation profile (material + positional + mobility)
 - `eval/tactical.c`: tactical profile (pressure + attacking opportunities)
+- `eval/phased.c`: phased profile (PST + king safety + pawn structure + mobility)
 - `eval/select.c`: runtime evaluation profile selector
 - `bots/minimax/src/minimax.c`: alpha-beta negamax search
 - `bots/minimax/src/main.c`: CLI entrypoint + protocol mode (`--protocol`) used by bot adapter
@@ -280,7 +281,7 @@ Example move request:
 ## Notes
 
 - Engine depth is controlled by `BOT_DEPTH` (default fallback is 4 when unset/invalid)
-- Evaluation profile is controlled by `BOT_EVAL` (`basic`, `advanced`, or `tactical`, default `basic`)
+- Evaluation profile is controlled by `BOT_EVAL` (`basic`, `advanced`, `tactical`, or `phased`, default `basic`)
 - API request timeout is controlled by `BOT_TIMEOUT_SECONDS` (default 60)
 - Web UI applies your move immediately, then shows a "bot is thinking" indicator while waiting for response
 - No opening book or endgame tablebase yet

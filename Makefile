@@ -1,6 +1,6 @@
 CC = gcc
 CFLAGS = -std=c11 -O2 -Wall -Wextra -Wpedantic -Iinclude
-EVAL_SRC = eval/basic.c eval/advanced.c eval/tactical.c eval/select.c
+EVAL_SRC = eval/basic.c eval/advanced.c eval/tactical.c eval/phased.c eval/select.c
 SRC = src/board.c src/movegen.c $(EVAL_SRC)
 BOT_MINIMAX_SRC = src/board.c src/movegen.c bots/minimax/src/minimax.c $(EVAL_SRC)
 BOT_ITERDEEP_SRC = src/board.c src/movegen.c bots/iterative-deepening/src/iterdeep.c $(EVAL_SRC)
