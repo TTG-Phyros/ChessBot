@@ -1,9 +1,10 @@
 # MiniMax Chess Bot (C + API + Web)
 
-A complete chess project built around a C11 engine:
+A complete chess project built around a C engine with a split backend:
 
 - Chess engine in C (legal move generation + Minimax)
-- HTTP API in C (libmicrohttpd + json-c)
+- API proxy in C (libmicrohttpd + libcurl)
+- Bot adapter in C (libmicrohttpd + json-c)
 - React web UI for playing against the engine
 - CLI mode for terminal play
 
@@ -27,8 +28,9 @@ A complete chess project built around a C11 engine:
 - `src/movegen.c`: legal move generation and check detection
 - `src/eval.c`: static evaluation
 - `src/minimax.c`: alpha-beta negamax search
-- `src/main.c`: CLI entrypoint
-- `src/api.c`: HTTP API server
+- `src/main.c`: CLI entrypoint + protocol mode (`--protocol`) used by bot adapter
+- `src/api.c`: HTTP API proxy (no engine logic)
+- `src/bot_service.c`: bot HTTP adapter (stdin/stdout bridge to `chess-bot --protocol`)
 
 ### Tests
 
@@ -43,7 +45,8 @@ A complete chess project built around a C11 engine:
 
 ### Containers
 
-- `Dockerfile`: builds/runs API backend
+- `Dockerfile.api`: builds/runs API backend
+- `Dockerfile.bot`: builds/runs bot adapter + bundled `chess-bot`
 - `Dockerfile.cli`: builds/runs CLI binary
 - `web/Dockerfile`: builds/runs React app
 - `docker-compose.yml`: multi-service orchestration
@@ -56,10 +59,36 @@ Run the full stack:
 docker compose up --build
 ```
 
+Depth is configured from `.env` at repo root.
+
+```env
+BOT_DEPTH=5
+```
+
+Optional API timeout config (compose):
+
+```env
+BOT_TIMEOUT_SECONDS=60
+```
+
 Then open:
 
 - Web UI: http://localhost:3000
 - API: http://localhost:5000/api/board
+
+Behind the scenes:
+
+- API proxy: port 5000
+- Bot adapter: internal port 5001
+- Engine process: `chess-bot --protocol` launched by bot adapter
+
+Request flow for a move:
+
+1. Web sends `POST /api/move`.
+2. API proxy forwards to bot adapter (`/bot/move`).
+3. Bot adapter writes `move <uci>` to `chess-bot --protocol`.
+4. `main.c` computes and returns JSON.
+5. Adapter returns JSON to API, API returns JSON to web.
 
 ## Ways to launch
 
@@ -72,7 +101,7 @@ docker compose up --build
 ### 2. Only API + Web with Docker Compose
 
 ```bash
-docker compose up --build api web
+docker compose up --build bot api web
 ```
 
 ### 3. CLI bot in Docker
@@ -85,21 +114,32 @@ docker compose run --rm chess-bot
 
 ```bash
 make chess-bot
-./chess-bot 4
+./chess-bot
 ```
 
-Depth range is 1 to 8.
+Depth range is 1 to 8. You can pass an argument (`./chess-bot 6`) or set `BOT_DEPTH`.
 
-### 5. Local API build/run
+### 5. Local API proxy build/run
 
-Dependencies: `libmicrohttpd`, `json-c`, `pkg-config`
+Dependencies: `libmicrohttpd`, `json-c`, `libcurl`, `pkg-config`
 
 ```bash
 make chess-api
 ./chess-api
 ```
 
-Server listens on port `5000`.
+API proxy listens on port `5000`.
+
+### 5b. Local bot adapter build/run
+
+Dependencies: `libmicrohttpd`, `json-c`, `pkg-config`
+
+```bash
+make chess-bot-service
+BOT_DEPTH=5 ./chess-bot-service
+```
+
+Bot adapter listens on port `5001` and starts `./chess-bot --protocol`.
 
 ### 6. Local web frontend
 
@@ -184,6 +224,14 @@ docker compose run --rm chess-bot make test-perft
 - `POST /api/move`: apply a player move, then engine responds
 - `POST /api/reset`: reset to start position
 
+The API process is a proxy. The bot adapter does not run chess logic itself: it forwards commands to `chess-bot --protocol` (from `src/main.c`) and returns that process output.
+
+Internal endpoints (not for frontend clients):
+
+- `GET /bot/board`
+- `POST /bot/move`
+- `POST /bot/reset`
+
 Example move request:
 
 ```json
@@ -199,6 +247,8 @@ Example move request:
 
 ## Notes
 
-- Engine move depth defaults to 4
+- Engine depth is controlled by `BOT_DEPTH` (default fallback is 4 when unset/invalid)
+- API request timeout is controlled by `BOT_TIMEOUT_SECONDS` (default 60)
+- Web UI applies your move immediately, then shows a "bot is thinking" indicator while waiting for response
 - No opening book or endgame tablebase yet
 - Promotion defaults to queen unless specified in UCI

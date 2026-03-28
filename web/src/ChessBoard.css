@@ -85,6 +85,29 @@
   min-height: 1.5rem;
 }
 
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-height: 1.5rem;
+}
+
+.status-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #c7ced5;
+  border-top-color: #2c3e50;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .reset-btn {
   padding: 0.75rem 1.5rem;
   font-size: 1rem;

@@ -1,16 +1,16 @@
-#include "chess.h"
-
+#include <curl/curl.h>
+#include <json-c/json.h>
 #include <microhttpd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <json-c/json.h>
 #include <unistd.h>
 
-#define PORT 5000
+#define API_PORT 5000
 #define MAX_BODY_SIZE 4096
+#define DEFAULT_BOT_BASE_URL "http://bot:5001"
+#define DEFAULT_BOT_TIMEOUT_SECONDS 60L
 
-/* Per-connection context for accumulating POST body */
 struct connection_context {
     char *body;
     size_t body_size;
@@ -18,46 +18,29 @@ struct connection_context {
     int handled;
 };
 
-static Board current_board;
+struct http_buffer {
+    char *data;
+    size_t size;
+    size_t capacity;
+};
 
-static json_object *move_to_json(const Move *move) {
-    json_object *obj = json_object_new_object();
-    char uci[6];
-    
-    move_to_uci(move, uci);
-    json_object_object_add(obj, "uci", json_object_new_string(uci));
-    json_object_object_add(obj, "from", json_object_new_int(move->from));
-    json_object_object_add(obj, "to", json_object_new_int(move->to));
-    
-    return obj;
-}
+static const char *bot_base_url = DEFAULT_BOT_BASE_URL;
+static long bot_timeout_seconds = DEFAULT_BOT_TIMEOUT_SECONDS;
 
-static json_object *board_to_json(const Board *board) {
-    json_object *obj = json_object_new_object();
-    json_object *squares_arr = json_object_new_array();
-    Move moves[MAX_MOVES];
-    int move_count = generate_legal_moves(board, moves);
-    json_object *moves_arr = json_object_new_array();
-    int i;
-    int in_check = is_in_check(board, board->side_to_move);
-    
-    for (i = 0; i < 64; i++) {
-        json_object_array_add(squares_arr, json_object_new_int(board->squares[i]));
+static long parse_positive_long_or_default(const char *value, long fallback) {
+    char *endptr;
+    long parsed;
+
+    if (!value || value[0] == '\0') {
+        return fallback;
     }
-    json_object_object_add(obj, "squares", squares_arr);
-    
-    json_object_object_add(obj, "side_to_move", json_object_new_int(board->side_to_move));
-    json_object_object_add(obj, "castling_rights", json_object_new_int(board->castling_rights));
-    json_object_object_add(obj, "en_passant_sq", json_object_new_int(board->en_passant_sq));
-    
-    for (i = 0; i < move_count; i++) {
-        json_object_array_add(moves_arr, move_to_json(&moves[i]));
+
+    parsed = strtol(value, &endptr, 10);
+    if (*endptr != '\0' || parsed <= 0) {
+        return fallback;
     }
-    json_object_object_add(obj, "legal_moves", moves_arr);
-    json_object_object_add(obj, "move_count", json_object_new_int(move_count));
-    json_object_object_add(obj, "in_check", json_object_new_boolean(in_check != 0));
-    
-    return obj;
+
+    return parsed;
 }
 
 static void add_cors_headers(struct MHD_Response *response) {
@@ -66,110 +49,127 @@ static void add_cors_headers(struct MHD_Response *response) {
     MHD_add_response_header(response, "Access-Control-Allow-Headers", "Content-Type");
 }
 
-static int send_json_response(struct MHD_Connection *connection, json_object *json_obj, int status_code) {
-    const char *json_str = json_object_to_json_string(json_obj);
+static int send_raw_json_response(
+    struct MHD_Connection *connection,
+    const char *json_body,
+    int status_code
+) {
     struct MHD_Response *response = MHD_create_response_from_buffer(
-        strlen(json_str),
-        (void *)json_str,
+        strlen(json_body),
+        (void *)json_body,
         MHD_RESPMEM_MUST_COPY
     );
     MHD_add_response_header(response, "Content-Type", "application/json");
     add_cors_headers(response);
-    int ret = MHD_queue_response(connection, status_code, response);
-    MHD_destroy_response(response);
-    json_object_put(json_obj);
+    {
+        int ret = MHD_queue_response(connection, status_code, response);
+        MHD_destroy_response(response);
+        return ret;
+    }
+}
+
+static int send_error_json_response(
+    struct MHD_Connection *connection,
+    int status_code,
+    const char *message
+) {
+    json_object *error = json_object_new_object();
+    int ret;
+
+    json_object_object_add(error, "error", json_object_new_string(message));
+    ret = send_raw_json_response(connection, json_object_to_json_string(error), status_code);
+    json_object_put(error);
     return ret;
 }
 
-static int handle_get_board(struct MHD_Connection *connection) {
-    json_object *response = board_to_json(&current_board);
-    return send_json_response(connection, response, MHD_HTTP_OK);
+static size_t write_callback(void *contents, size_t size, size_t nmemb, void *userdata) {
+    struct http_buffer *buffer = (struct http_buffer *)userdata;
+    size_t incoming = size * nmemb;
+    size_t needed;
+    char *new_data;
+
+    if (incoming == 0) {
+        return 0;
+    }
+
+    needed = buffer->size + incoming + 1;
+    if (buffer->capacity < needed) {
+        size_t new_capacity = needed * 2;
+        new_data = realloc(buffer->data, new_capacity);
+        if (!new_data) {
+            return 0;
+        }
+        buffer->data = new_data;
+        buffer->capacity = new_capacity;
+    }
+
+    memcpy(buffer->data + buffer->size, contents, incoming);
+    buffer->size += incoming;
+    buffer->data[buffer->size] = '\0';
+
+    return incoming;
 }
 
-static int handle_move(struct MHD_Connection *connection, const char *body) {
-    const char *key;
-    const char *colon;
-    const char *quote1;
-    const char *quote2;
-    char uci_buf[8];
-    size_t uci_len;
-    const char *uci;
-    Move move;
-    Board next_board;
+static int forward_request(
+    struct MHD_Connection *connection,
+    const char *method,
+    const char *path,
+    const char *body
+) {
+    CURL *curl;
+    CURLcode curl_result;
+    long status_code = 502;
+    struct http_buffer response_buffer = {0};
+    struct curl_slist *headers = NULL;
+    char url[256];
+    int result;
 
-    if (!body) {
-        json_object *error = json_object_new_object();
-        json_object_object_add(error, "error", json_object_new_string("Empty request body"));
-        return send_json_response(connection, error, MHD_HTTP_BAD_REQUEST);
+    if (snprintf(url, sizeof(url), "%s%s", bot_base_url, path) >= (int)sizeof(url)) {
+        return send_error_json_response(connection, MHD_HTTP_INTERNAL_SERVER_ERROR, "Target URL too long");
     }
 
-    key = strstr(body, "\"uci\"");
-    if (!key) {
-        json_object *error = json_object_new_object();
-        json_object_object_add(error, "error", json_object_new_string("Missing uci field"));
-        return send_json_response(connection, error, MHD_HTTP_BAD_REQUEST);
+    curl = curl_easy_init();
+    if (!curl) {
+        return send_error_json_response(connection, MHD_HTTP_INTERNAL_SERVER_ERROR, "Failed to initialize HTTP client");
     }
 
-    colon = strchr(key, ':');
-    if (!colon) {
-        json_object *error = json_object_new_object();
-        json_object_object_add(error, "error", json_object_new_string("Invalid request body"));
-        return send_json_response(connection, error, MHD_HTTP_BAD_REQUEST);
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_buffer);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, bot_timeout_seconds);
+
+    if (strcmp(method, "POST") == 0) {
+        curl_easy_setopt(curl, CURLOPT_POST, 1L);
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDS, body ? body : "");
+        curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, (long)strlen(body ? body : ""));
+        headers = curl_slist_append(headers, "Content-Type: application/json");
+        if (headers) {
+            curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+        }
     }
 
-    quote1 = strchr(colon, '"');
-    if (!quote1) {
-        json_object *error = json_object_new_object();
-        json_object_object_add(error, "error", json_object_new_string("Invalid request body"));
-        return send_json_response(connection, error, MHD_HTTP_BAD_REQUEST);
+    curl_result = curl_easy_perform(curl);
+    if (curl_result == CURLE_OK) {
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status_code);
     }
 
-    quote2 = strchr(quote1 + 1, '"');
-    if (!quote2) {
-        json_object *error = json_object_new_object();
-        json_object_object_add(error, "error", json_object_new_string("Invalid request body"));
-        return send_json_response(connection, error, MHD_HTTP_BAD_REQUEST);
+    if (headers) {
+        curl_slist_free_all(headers);
+    }
+    curl_easy_cleanup(curl);
+
+    if (curl_result != CURLE_OK) {
+        free(response_buffer.data);
+        return send_error_json_response(connection, MHD_HTTP_BAD_GATEWAY, "Failed to reach bot service");
     }
 
-    uci_len = (size_t)(quote2 - (quote1 + 1));
-    if (uci_len < 4 || uci_len > 5 || uci_len >= sizeof(uci_buf)) {
-        json_object *error = json_object_new_object();
-        json_object_object_add(error, "error", json_object_new_string("Invalid UCI move"));
-        return send_json_response(connection, error, MHD_HTTP_BAD_REQUEST);
+    if (!response_buffer.data) {
+        return send_error_json_response(connection, MHD_HTTP_BAD_GATEWAY, "Bot service returned empty response");
     }
 
-    memcpy(uci_buf, quote1 + 1, uci_len);
-    uci_buf[uci_len] = '\0';
-    uci = uci_buf;
-
-    if (!uci || !parse_uci_move(&current_board, uci, &move)) {
-        json_object *error = json_object_new_object();
-        json_object_object_add(error, "error", json_object_new_string("Illegal move"));
-        return send_json_response(connection, error, MHD_HTTP_BAD_REQUEST);
-    }
-
-    apply_move(&current_board, &move, &next_board);
-    current_board = next_board;
-
-    /* Engine move */
-    Move best;
-    int depth = 4;
-    int score = choose_best_move(&current_board, depth, &best);
-    Board engine_next;
-    apply_move(&current_board, &best, &engine_next);
-    current_board = engine_next;
-
-    json_object *response = board_to_json(&current_board);
-    json_object_object_add(response, "engine_move", json_object_new_string("moved"));
-    json_object_object_add(response, "engine_score", json_object_new_int(score));
-
-    return send_json_response(connection, response, MHD_HTTP_OK);
-}
-
-static int handle_reset(struct MHD_Connection *connection) {
-    board_set_startpos(&current_board);
-    json_object *response = board_to_json(&current_board);
-    return send_json_response(connection, response, MHD_HTTP_OK);
+    result = send_raw_json_response(connection, response_buffer.data, (int)status_code);
+    free(response_buffer.data);
+    return result;
 }
 
 static void request_completed(
@@ -204,31 +204,28 @@ static enum MHD_Result request_handler(
     size_t *upload_data_size,
     void **con_cls
 ) {
+    struct connection_context *ctx;
+
     (void)cls;
     (void)version;
 
-    struct connection_context *ctx;
-    
-    /* Handle CORS preflight requests */
     if (strcmp(method, "OPTIONS") == 0) {
         struct MHD_Response *response = MHD_create_response_from_buffer(0, (void *)"", MHD_RESPMEM_PERSISTENT);
+        int ret;
         add_cors_headers(response);
-        int ret = MHD_queue_response(connection, MHD_HTTP_OK, response);
+        ret = MHD_queue_response(connection, MHD_HTTP_OK, response);
         MHD_destroy_response(response);
         return ret;
     }
-    
-    /* Handle GET /api/board */
+
     if (strcmp(method, "GET") == 0 && strcmp(url, "/api/board") == 0) {
-        return handle_get_board(connection);
+        return forward_request(connection, "GET", "/bot/board", NULL);
     }
 
     if (*con_cls == NULL) {
         ctx = calloc(1, sizeof(struct connection_context));
         if (!ctx) {
-            json_object *error = json_object_new_object();
-            json_object_object_add(error, "error", json_object_new_string("Out of memory"));
-            return send_json_response(connection, error, MHD_HTTP_INTERNAL_SERVER_ERROR);
+            return send_error_json_response(connection, MHD_HTTP_INTERNAL_SERVER_ERROR, "Out of memory");
         }
         *con_cls = ctx;
         return MHD_YES;
@@ -236,25 +233,18 @@ static enum MHD_Result request_handler(
 
     ctx = (struct connection_context *)*con_cls;
 
-    /* Handle POST requests - accumulate body data */
     if (strcmp(method, "POST") == 0) {
-        /* Accumulate upload data */
         if (*upload_data_size > 0) {
             size_t needed = ctx->body_size + *upload_data_size + 1;
             if (needed > MAX_BODY_SIZE) {
-                /* Body too large */
-                json_object *error = json_object_new_object();
-                json_object_object_add(error, "error", json_object_new_string("Request body too large"));
-                return send_json_response(connection, error, MHD_HTTP_CONTENT_TOO_LARGE);
+                return send_error_json_response(connection, MHD_HTTP_CONTENT_TOO_LARGE, "Request body too large");
             }
 
             if (ctx->body_capacity < needed) {
                 size_t new_capacity = needed * 2;
                 char *new_body = realloc(ctx->body, new_capacity);
                 if (!new_body) {
-                    json_object *error = json_object_new_object();
-                    json_object_object_add(error, "error", json_object_new_string("Out of memory"));
-                    return send_json_response(connection, error, MHD_HTTP_INTERNAL_SERVER_ERROR);
+                    return send_error_json_response(connection, MHD_HTTP_INTERNAL_SERVER_ERROR, "Out of memory");
                 }
                 ctx->body = new_body;
                 ctx->body_capacity = new_capacity;
@@ -272,60 +262,46 @@ static enum MHD_Result request_handler(
         }
         ctx->handled = 1;
 
-        /* All data received - process the request */
-        int ret = MHD_NO;
-
         if (!ctx->body) {
             ctx->body = malloc(1);
             if (!ctx->body) {
-                json_object *error = json_object_new_object();
-                json_object_object_add(error, "error", json_object_new_string("Out of memory"));
-                return send_json_response(connection, error, MHD_HTTP_INTERNAL_SERVER_ERROR);
+                return send_error_json_response(connection, MHD_HTTP_INTERNAL_SERVER_ERROR, "Out of memory");
             }
             ctx->body[0] = '\0';
         } else {
-            ctx->body[ctx->body_size] = '\0';  /* Null-terminate */
+            ctx->body[ctx->body_size] = '\0';
         }
 
         if (strcmp(url, "/api/move") == 0) {
-            size_t body_len = strlen(ctx->body);
-            char *body_copy = malloc(body_len + 1);
-            if (!body_copy) {
-                json_object *error = json_object_new_object();
-                json_object_object_add(error, "error", json_object_new_string("Out of memory"));
-                return send_json_response(connection, error, MHD_HTTP_INTERNAL_SERVER_ERROR);
-            }
-            memcpy(body_copy, ctx->body, body_len + 1);
-            ret = handle_move(connection, body_copy);
-            free(body_copy);
-        } else if (strcmp(url, "/api/reset") == 0) {
-            ret = handle_reset(connection);
-        } else {
-            json_object *error = json_object_new_object();
-            json_object_object_add(error, "error", json_object_new_string("Not found"));
-            ret = send_json_response(connection, error, MHD_HTTP_NOT_FOUND);
+            return forward_request(connection, "POST", "/bot/move", ctx->body);
         }
-
-        return ret;
+        if (strcmp(url, "/api/reset") == 0) {
+            return forward_request(connection, "POST", "/bot/reset", ctx->body);
+        }
+        return send_error_json_response(connection, MHD_HTTP_NOT_FOUND, "Not found");
     }
-    
-    /* Method not allowed */
-    json_object *error = json_object_new_object();
-    json_object_object_add(error, "error", json_object_new_string("Method not allowed"));
-    return send_json_response(connection, error, MHD_HTTP_BAD_REQUEST);
+
+    return send_error_json_response(connection, MHD_HTTP_BAD_REQUEST, "Method not allowed");
 }
 
-int main(int argc, char **argv) {
+int main(void) {
     struct MHD_Daemon *daemon;
-    
-    (void)argc;
-    (void)argv;
-    
-    board_set_startpos(&current_board);
-    
+    const char *env_bot_url = getenv("BOT_URL");
+    const char *env_bot_timeout = getenv("BOT_TIMEOUT_SECONDS");
+
+    if (env_bot_url && env_bot_url[0] != '\0') {
+        bot_base_url = env_bot_url;
+    }
+    bot_timeout_seconds = parse_positive_long_or_default(env_bot_timeout, DEFAULT_BOT_TIMEOUT_SECONDS);
+
+    if (curl_global_init(CURL_GLOBAL_DEFAULT) != 0) {
+        fprintf(stderr, "Failed to initialize libcurl\n");
+        return 1;
+    }
+
     daemon = MHD_start_daemon(
         MHD_USE_SELECT_INTERNALLY,
-        PORT,
+        API_PORT,
         NULL,
         NULL,
         &request_handler,
@@ -333,21 +309,24 @@ int main(int argc, char **argv) {
         MHD_OPTION_NOTIFY_COMPLETED, request_completed, NULL,
         MHD_OPTION_END
     );
-    
+
     if (daemon == NULL) {
-        fprintf(stderr, "Failed to start MHD daemon on port %d\n", PORT);
+        curl_global_cleanup();
+        fprintf(stderr, "Failed to start API daemon on port %d\n", API_PORT);
         return 1;
     }
-    
-    printf("Chess API server running on http://0.0.0.0:%d\n", PORT);
+
+    printf("Chess API proxy running on http://0.0.0.0:%d\n", API_PORT);
+    printf("Proxying bot requests to: %s\n", bot_base_url);
+    printf("Bot request timeout: %lds\n", bot_timeout_seconds);
     printf("Press Ctrl+C to stop.\n");
     fflush(stdout);
-    
-    /* Keep server running forever - sleep in a loop instead of waiting for input */
+
     while (1) {
         sleep(60);
     }
-    
+
     MHD_stop_daemon(daemon);
+    curl_global_cleanup();
     return 0;
 }

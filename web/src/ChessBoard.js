@@ -35,6 +35,49 @@ export default function ChessBoard() {
   const [status, setStatus] = useState("Chargement...");
   const [gameOver, setGameOver] = useState(false);
   const [isFlipped, setIsFlipped] = useState(false);
+  const [isBotThinking, setIsBotThinking] = useState(false);
+
+  const applyUserMoveLocally = (currentBoard, move) => {
+    const nextBoard = {
+      ...currentBoard,
+      squares: [...currentBoard.squares],
+      legal_moves: [],
+      move_count: 0,
+      side_to_move: -1,
+    };
+    const movingPiece = nextBoard.squares[move.from];
+    const fromFile = move.from % 8;
+    const toFile = move.to % 8;
+    const promotion = move.uci.length === 5 ? move.uci[4] : null;
+
+    nextBoard.squares[move.from] = 0;
+
+    if (movingPiece === 6 && move.from === 4 && move.to === 6) {
+      nextBoard.squares[7] = 0;
+      nextBoard.squares[5] = 4;
+    } else if (movingPiece === 6 && move.from === 4 && move.to === 2) {
+      nextBoard.squares[0] = 0;
+      nextBoard.squares[3] = 4;
+    }
+
+    if (
+      movingPiece === 1 &&
+      Math.abs(fromFile - toFile) === 1 &&
+      nextBoard.squares[move.to] === 0
+    ) {
+      nextBoard.squares[move.to - 8] = 0;
+    }
+
+    if (promotion) {
+      const promoMap = { q: 5, r: 4, b: 3, n: 2 };
+      nextBoard.squares[move.to] =
+        promoMap[promotion.toLowerCase()] || movingPiece;
+    } else {
+      nextBoard.squares[move.to] = movingPiece;
+    }
+
+    return nextBoard;
+  };
 
   useEffect(() => {
     fetchBoard();
@@ -53,7 +96,7 @@ export default function ChessBoard() {
     }
   };
 
-  const updateStatus = (boardData) => {
+  const updateStatus = (boardData, lastEngineMove = null) => {
     if (boardData.move_count === 0) {
       if (boardData.in_check) {
         setStatus(
@@ -66,17 +109,21 @@ export default function ChessBoard() {
       }
       setGameOver(true);
     } else {
-      setStatus(
-        boardData.side_to_move === 1
-          ? "À vous de jouer (Blanc)"
-          : "Le bot réfléchit...",
-      );
+      if (boardData.side_to_move === 1) {
+        if (lastEngineMove) {
+          setStatus(`Le bot a joué ${lastEngineMove}. À vous de jouer (Blanc)`);
+        } else {
+          setStatus("À vous de jouer (Blanc)");
+        }
+      } else {
+        setStatus("Le bot réfléchit...");
+      }
       setGameOver(false);
     }
   };
 
   const handleSquareClick = async (sq) => {
-    if (gameOver || board.side_to_move !== 1) return;
+    if (gameOver || board.side_to_move !== 1 || isBotThinking) return;
 
     if (selectedSquare === null) {
       const moves = board.legal_moves.filter((m) => m.from === sq);
@@ -90,6 +137,15 @@ export default function ChessBoard() {
       );
 
       if (move) {
+        const previousBoard = board;
+        const optimisticBoard = applyUserMoveLocally(board, move);
+
+        setBoard(optimisticBoard);
+        setStatus("Le bot réfléchit...");
+        setIsBotThinking(true);
+        setSelectedSquare(null);
+        setLegalMoves([]);
+
         try {
           const response = await fetch(`${API_URL}/api/move`, {
             method: "POST",
@@ -99,19 +155,25 @@ export default function ChessBoard() {
           const data = await response.json();
           if (data.error) {
             console.error("Erreur:", data.error);
+            setBoard(previousBoard);
             setStatus("Coup invalide");
           } else {
             setBoard(data);
-            updateStatus(data);
+            updateStatus(data, data.engine_move || null);
           }
         } catch (error) {
           console.error("Erreur:", error);
+          setBoard(previousBoard);
           setStatus("Erreur lors du coup");
+        } finally {
+          setIsBotThinking(false);
         }
       }
 
-      setSelectedSquare(null);
-      setLegalMoves([]);
+      if (!isBotThinking) {
+        setSelectedSquare(null);
+        setLegalMoves([]);
+      }
     }
   };
 
@@ -182,26 +244,15 @@ export default function ChessBoard() {
             );
           })}
         </div>
-        <div className="board-labels">
-          <div className="file-labels">
-            {files.map((f) => (
-              <div key={f} className="label">
-                {f}
-              </div>
-            ))}
-          </div>
-          <div className="rank-labels">
-            {ranks.map((r) => (
-              <div key={r} className="label">
-                {r}
-              </div>
-            ))}
-          </div>
-        </div>
       </div>
 
       <div className="controls">
-        <p className="status">{status}</p>
+        <div className="status-row" aria-live="polite">
+          {isBotThinking && (
+            <span className="status-spinner" aria-hidden="true" />
+          )}
+          <p className="status">{status}</p>
+        </div>
         <div className="button-row">
           <button
             onClick={() => setIsFlipped((prev) => !prev)}

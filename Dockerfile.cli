@@ -10,4 +10,4 @@ COPY . .
 
 RUN make chess-bot
 
-CMD ["./chess-bot", "4"]
+CMD ["./chess-bot"]

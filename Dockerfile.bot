@@ -1,0 +1,25 @@
+FROM gcc:14 AS builder
+
+WORKDIR /app
+
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends make pkg-config libmicrohttpd-dev libjson-c-dev \
+	&& rm -rf /var/lib/apt/lists/*
+
+COPY . .
+
+RUN make chess-bot
+RUN make chess-bot-service
+
+FROM alpine:latest
+
+RUN apk add --no-cache libmicrohttpd json-c libc6-compat
+
+WORKDIR /app
+
+COPY --from=builder /app/chess-bot-service .
+COPY --from=builder /app/chess-bot .
+
+EXPOSE 5001
+
+CMD ["./chess-bot-service"]

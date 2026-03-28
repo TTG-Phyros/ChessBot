@@ -1,8 +1,19 @@
 services:
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile.bot
+    image: minimax-chess-bot-service:latest
+    command: ["./chess-bot-service"]
+    environment:
+      BOT_DEPTH: "${BOT_DEPTH:-4}"
+    expose:
+      - 5001
+
   api:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.api
     image: minimax-chess-api:latest
     ports:
       - "5000:5000"
@@ -10,6 +21,10 @@ services:
       - 5000
     environment:
       PORT: "5000"
+      BOT_URL: http://bot:5001
+      BOT_TIMEOUT_SECONDS: "60"
+    depends_on:
+      - bot
 
   web:
     build:
@@ -28,6 +43,8 @@ services:
       context: .
       dockerfile: Dockerfile.cli
     image: minimax-chess-bot-cli:latest
+    environment:
+      BOT_DEPTH: "${BOT_DEPTH:-4}"
     stdin_open: true
     tty: true
 
