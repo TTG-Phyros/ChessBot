@@ -1,6 +1,11 @@
 #include "chess.h"
 
 #include <stdio.h>
+#include <stdlib.h>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
 
 /* Iterative Deepening Deepening Search
  * This bot uses iterative deepening with alpha-beta pruning.
@@ -55,6 +60,23 @@ static int same_move(const Move *a, const Move *b) {
     );
 }
 
+static int get_bot_threads(void) {
+    const char *env = getenv("BOT_THREADS");
+    int threads = 1;
+
+    if (env) {
+        int parsed = atoi(env);
+        if (parsed > 0) {
+            threads = parsed;
+        }
+    }
+
+    if (threads > 64) {
+        threads = 64;
+    }
+    return threads;
+}
+
 static void bring_move_to_front(Move moves[MAX_MOVES], int count, const Move *target) {
     int i;
 
@@ -74,9 +96,11 @@ static void bring_move_to_front(Move moves[MAX_MOVES], int count, const Move *ta
 
 int choose_best_move_with_debug(const Board *board, int max_depth, Move *best_move, FILE *debug_log) {
     Move moves[MAX_MOVES];
+    int scores[MAX_MOVES];
     int count = generate_legal_moves(board, moves);
     int best_score = -CHECKMATE_SCORE;
     int current_depth;
+    int threads = get_bot_threads();
     int i;
     Move pv_move;
     int has_pv = 0;
@@ -99,6 +123,42 @@ int choose_best_move_with_debug(const Board *board, int max_depth, Move *best_mo
             bring_move_to_front(moves, count, &pv_move);
         }
 
+        if (threads > 1) {
+#ifdef _OPENMP
+#pragma omp parallel for num_threads(threads)
+            for (i = 0; i < count; i++) {
+                Board next;
+                int score;
+
+                apply_move(board, &moves[i], &next);
+                score = -negamax(&next, current_depth - 1, -CHECKMATE_SCORE, CHECKMATE_SCORE, 1);
+                scores[i] = score;
+            }
+
+            for (i = 0; i < count; i++) {
+                if (scores[i] > depth_best_score) {
+                    depth_best_score = scores[i];
+                    depth_best_move = moves[i];
+                }
+            }
+#else
+            for (i = 0; i < count; i++) {
+                Board next;
+                int score;
+
+                apply_move(board, &moves[i], &next);
+                score = -negamax(&next, current_depth - 1, -beta, -alpha, 1);
+
+                if (score > depth_best_score) {
+                    depth_best_score = score;
+                    depth_best_move = moves[i];
+                }
+                if (score > alpha) {
+                    alpha = score;
+                }
+            }
+#endif
+        } else
         for (i = 0; i < count; i++) {
             Board next;
             int score;

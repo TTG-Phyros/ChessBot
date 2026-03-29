@@ -1,0 +1,21 @@
+FROM gcc:14
+
+WORKDIR /app
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        make \
+        pkg-config \
+        python3 \
+        python3-venv \
+        stockfish \
+    && ln -s /usr/games/stockfish /usr/local/bin/stockfish \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY . .
+
+RUN make all
+RUN python3 -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir python-chess
+
+ENTRYPOINT ["/opt/venv/bin/python", "tools/elo_eval.py"]

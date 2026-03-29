@@ -18,7 +18,7 @@ RUN make test-perft-iterdeep
 
 FROM alpine:latest
 
-RUN apk add --no-cache libmicrohttpd json-c libc6-compat
+RUN apk add --no-cache libmicrohttpd json-c libc6-compat libgomp
 
 WORKDIR /app
 

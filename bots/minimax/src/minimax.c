@@ -1,6 +1,28 @@
 #include "chess.h"
 
 #include <stdio.h>
+#include <stdlib.h>
+
+#ifdef _OPENMP
+#include <omp.h>
+#endif
+
+static int get_bot_threads(void) {
+    const char *env = getenv("BOT_THREADS");
+    int threads = 1;
+
+    if (env) {
+        int parsed = atoi(env);
+        if (parsed > 0) {
+            threads = parsed;
+        }
+    }
+
+    if (threads > 64) {
+        threads = 64;
+    }
+    return threads;
+}
 
 static int negamax(const Board *board, int depth, int alpha, int beta, int ply) {
     Move moves[MAX_MOVES];
@@ -38,10 +60,12 @@ static int negamax(const Board *board, int depth, int alpha, int beta, int ply) 
 
 static int choose_best_move_at_depth(const Board *board, int depth, Move *best_move) {
     Move moves[MAX_MOVES];
+    int scores[MAX_MOVES];
     int count = generate_legal_moves(board, moves);
     int best_score = -CHECKMATE_SCORE;
     int alpha = -CHECKMATE_SCORE;
     int beta = CHECKMATE_SCORE;
+    int threads = get_bot_threads();
     int i;
 
     if (count == 0) {
@@ -49,6 +73,29 @@ static int choose_best_move_at_depth(const Board *board, int depth, Move *best_m
     }
 
     *best_move = moves[0];
+
+    if (threads > 1) {
+#ifdef _OPENMP
+#pragma omp parallel for num_threads(threads)
+        for (i = 0; i < count; i++) {
+            Board next;
+            int score;
+
+            apply_move(board, &moves[i], &next);
+            score = -negamax(&next, depth - 1, -CHECKMATE_SCORE, CHECKMATE_SCORE, 1);
+            scores[i] = score;
+        }
+
+        for (i = 0; i < count; i++) {
+            if (scores[i] > best_score) {
+                best_score = scores[i];
+                *best_move = moves[i];
+            }
+        }
+
+        return best_score;
+#endif
+    }
 
     for (i = 0; i < count; i++) {
         Board next;

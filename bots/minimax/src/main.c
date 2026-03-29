@@ -499,6 +499,74 @@ static void emit_state_json(const Board *board, const char *engine_move, int eng
     fflush(stdout);
 }
 
+static void handle_engine_turn(
+    Board *board,
+    GameRecorder *game,
+    int depth,
+    FILE *debug_log,
+    int *request_id,
+    const char *trigger_move
+) {
+    Move legal_moves[MAX_MOVES];
+    int legal_count;
+
+    if (!board || !game || !request_id) {
+        return;
+    }
+
+    legal_count = generate_legal_moves(board, legal_moves);
+    if (legal_count == 0) {
+        append_game_pgn_if_finished(
+            debug_log,
+            game,
+            board,
+            "minimax",
+            get_evaluation_profile(),
+            depth,
+            "protocol"
+        );
+        emit_state_json(board, "", 0, depth);
+        return;
+    }
+
+    {
+        Move engine_move;
+        int current_request_id;
+        int score;
+        char engine_uci[6];
+        char engine_san[24];
+        Board next_board;
+        long long started_ms;
+        long long ended_ms;
+        long long think_ms;
+
+        (*request_id)++;
+        current_request_id = *request_id;
+        log_search_start(debug_log, current_request_id, "protocol", trigger_move, depth);
+        started_ms = now_ms();
+        score = choose_best_move_with_debug(board, depth, &engine_move, debug_log);
+        ended_ms = now_ms();
+        think_ms = (ended_ms >= started_ms) ? (ended_ms - started_ms) : 0;
+
+        move_to_uci(&engine_move, engine_uci);
+        build_san_move(board, &engine_move, engine_san, sizeof(engine_san));
+        log_search_end(debug_log, current_request_id, engine_uci, score, think_ms);
+        apply_move(board, &engine_move, &next_board);
+        *board = next_board;
+        record_move_san(game, engine_san);
+        append_game_pgn_if_finished(
+            debug_log,
+            game,
+            board,
+            "minimax",
+            get_evaluation_profile(),
+            depth,
+            "protocol"
+        );
+        emit_state_json(board, engine_uci, score, depth);
+    }
+}
+
 static int run_protocol_mode(int depth, FILE *debug_log) {
     Board board;
     char input[128];
@@ -541,8 +609,6 @@ static int run_protocol_mode(int depth, FILE *debug_log) {
         }
 
         if (strcmp(cmd, "move") == 0) {
-            Move legal_moves[MAX_MOVES];
-            int legal_count;
             char player_san[24];
 
             if (!arg || !parse_uci_move(&board, arg, &user_move)) {
@@ -555,57 +621,12 @@ static int run_protocol_mode(int depth, FILE *debug_log) {
             apply_move(&board, &user_move, &next_board);
             board = next_board;
             record_move_san(&game, player_san);
+            handle_engine_turn(&board, &game, depth, debug_log, &request_id, arg);
+            continue;
+        }
 
-            legal_count = generate_legal_moves(&board, legal_moves);
-            if (legal_count == 0) {
-                append_game_pgn_if_finished(
-                    debug_log,
-                    &game,
-                    &board,
-                    "minimax",
-                    get_evaluation_profile(),
-                    depth,
-                    "protocol"
-                );
-                emit_state_json(&board, "", 0, depth);
-                continue;
-            }
-
-            {
-                Move engine_move;
-                int current_request_id;
-                int score;
-                char engine_uci[6];
-                char engine_san[24];
-                long long started_ms;
-                long long ended_ms;
-                long long think_ms;
-
-                request_id++;
-                current_request_id = request_id;
-                log_search_start(debug_log, current_request_id, "protocol", arg, depth);
-                started_ms = now_ms();
-                score = choose_best_move_with_debug(&board, depth, &engine_move, debug_log);
-                ended_ms = now_ms();
-                think_ms = (ended_ms >= started_ms) ? (ended_ms - started_ms) : 0;
-
-                move_to_uci(&engine_move, engine_uci);
-                build_san_move(&board, &engine_move, engine_san, sizeof(engine_san));
-                log_search_end(debug_log, current_request_id, engine_uci, score, think_ms);
-                apply_move(&board, &engine_move, &next_board);
-                board = next_board;
-                record_move_san(&game, engine_san);
-                append_game_pgn_if_finished(
-                    debug_log,
-                    &game,
-                    &board,
-                    "minimax",
-                    get_evaluation_profile(),
-                    depth,
-                    "protocol"
-                );
-                emit_state_json(&board, engine_uci, score, depth);
-            }
+        if (strcmp(cmd, "go") == 0) {
+            handle_engine_turn(&board, &game, depth, debug_log, &request_id, "(go)");
             continue;
         }
 

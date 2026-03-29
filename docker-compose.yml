@@ -60,3 +60,65 @@ services:
       dockerfile: Dockerfile.cli
     image: minimax-chess-bot-cli:latest
     command: ["make", "test"]
+
+  elo-eval:
+    profiles:
+      - eval
+    build:
+      context: .
+      dockerfile: Dockerfile.elo
+    image: minimax-chess-elo-eval:latest
+    command:
+      [
+        "--bot=${EVAL_BOT:-minimax}",
+        "--bot-depth=${EVAL_BOT_DEPTH:-4}",
+        "--bot-eval=${EVAL_BOT_EVAL:-basic}",
+        "--parallel-games=${EVAL_PARALLEL_GAMES:-1}",
+        "--stockfish=${EVAL_OPPONENT_ENGINE:-${EVAL_STOCKFISH:-stockfish}}",
+        "--opponent-kind=${EVAL_OPPONENT_KIND:-auto}",
+        "--levels=${EVAL_LEVELS:-1320,1500,1700,1900}",
+        "--games-per-level=${EVAL_GAMES_PER_LEVEL:-8}",
+        "--sf-movetime-ms=${EVAL_SF_MOVETIME_MS:-120}",
+        "--sf-hash=${EVAL_SF_HASH:-64}",
+        "--sf-threads=${EVAL_SF_THREADS:-1}",
+        "--max-plies=${EVAL_MAX_PLIES:-300}",
+        "--stop-if-score-rate-below=${EVAL_STOP_IF_SCORE_RATE_BELOW:-${EVAL_STOP_IF_WINRATE_BELOW:-0.40}}",
+        "--pgn-dir=${EVAL_PGN_DIR:-logs/elo-pgn}",
+        "--output-json=${EVAL_OUTPUT_JSON:-logs/elo-report.json}",
+      ]
+    volumes:
+      - ./logs:/app/logs
+      - ./engines:/app/engines
+    environment:
+      BOT_THREADS: "${EVAL_BOT_THREADS:-1}"
+
+  eval-rodent:
+    profiles:
+      - eval
+    build:
+      context: .
+      dockerfile: Dockerfile.elo
+    image: minimax-chess-elo-eval:latest
+    command:
+      [
+        "--bot=${EVAL_RODENT_BOT:-minimax}",
+        "--bot-depth=${EVAL_RODENT_BOT_DEPTH:-4}",
+        "--bot-eval=${EVAL_RODENT_BOT_EVAL:-basic}",
+        "--parallel-games=${EVAL_RODENT_PARALLEL_GAMES:-1}",
+        "--stockfish=${EVAL_RODENT_ENGINE:-/app/engines/rodent}",
+        "--opponent-kind=${EVAL_RODENT_KIND:-rodent}",
+        "--levels=${EVAL_RODENT_LEVELS:-elo:800,elo:900,elo:1000,elo:1100,elo:1200,elo:1300,elo:1400}",
+        "--games-per-level=${EVAL_RODENT_GAMES_PER_LEVEL:-8}",
+        "--sf-movetime-ms=${EVAL_RODENT_MOVETIME_MS:-120}",
+        "--sf-hash=${EVAL_RODENT_HASH:-64}",
+        "--sf-threads=${EVAL_RODENT_THREADS:-1}",
+        "--max-plies=${EVAL_RODENT_MAX_PLIES:-300}",
+        "--stop-if-score-rate-below=${EVAL_RODENT_STOP_IF_SCORE_RATE_BELOW:-${EVAL_RODENT_STOP_IF_WINRATE_BELOW:-0.40}}",
+        "--pgn-dir=${EVAL_RODENT_PGN_DIR:-logs/elo-rodent-pgn}",
+        "--output-json=${EVAL_RODENT_OUTPUT_JSON:-logs/elo-rodent-report.json}",
+      ]
+    volumes:
+      - ./logs:/app/logs
+      - ./engines:/app/engines
+    environment:
+      BOT_THREADS: "${EVAL_RODENT_BOT_THREADS:-1}"

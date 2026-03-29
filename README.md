@@ -278,6 +278,95 @@ Example move request:
 - Enter moves in UCI format: `e2e4`, `g1f3`, `e7e8q`
 - Type `quit` to stop
 
+## Elo evaluation versus Stockfish
+
+You can estimate your bot Elo by running automatic matches against Stockfish at multiple `UCI_Elo` strengths, then fitting a single Elo value from the observed scores.
+
+Prerequisites:
+
+- Build bot binaries: `make all`
+- Install Python dependency: `pip install python-chess`
+- Install a UCI opponent engine (Stockfish, Rodent, Komodo) and ensure it is available on PATH (or pass `--stockfish <path>`)
+
+Quick run (default bot: minimax):
+
+```bash
+make elo-eval
+```
+
+Docker run:
+
+```bash
+docker compose --profile eval run --rm elo-eval
+```
+
+Ready-to-run low-strength Rodent run (movetime presets):
+
+```bash
+docker compose --profile eval run --rm eval-rodent
+```
+
+Before running `eval-rodent`, place a Linux Rodent UCI binary in `./engines` as `./engines/rodent` (not a Windows `.exe`).
+If you only have `rodent.exe`, run the evaluator directly on Windows (outside Docker).
+
+All Docker eval settings are read from the root `.env` file:
+
+- `EVAL_BOT` (`minimax` or `iterdeep`)
+- `EVAL_BOT_DEPTH`
+- `EVAL_BOT_EVAL` (`basic`, `advanced`, `tactical`, or `phased`)
+- `EVAL_PARALLEL_GAMES` (number of concurrent games per level)
+- `EVAL_BOT_THREADS` (bot search threads per game, via `BOT_THREADS`)
+- `EVAL_OPPONENT_ENGINE` (for example `stockfish`, `/app/engines/rodent`, `/app/engines/komodo`)
+- `EVAL_OPPONENT_KIND` (`auto`, `stockfish`, `rodent`, `komodo`)
+- `EVAL_LEVELS` (supports `elo:N`, `skill:N`, `depth:N`, `movetime:N`)
+- `EVAL_GAMES_PER_LEVEL`
+- `EVAL_SF_MOVETIME_MS`
+- `EVAL_SF_HASH`
+- `EVAL_SF_THREADS`
+- `EVAL_MAX_PLIES`
+- `EVAL_STOP_IF_SCORE_RATE_BELOW` (default `0.40`; set `< 0` to disable early stop)
+- `EVAL_PGN_DIR` (directory for one PGN file per played game)
+- `EVAL_OUTPUT_JSON`
+
+Rodent preset settings are also available in `.env` under `EVAL_RODENT_*`.
+Rodent profile also supports `EVAL_RODENT_PARALLEL_GAMES` and `EVAL_RODENT_BOT_THREADS`.
+Rodent profile PGNs are controlled by `EVAL_RODENT_PGN_DIR`.
+
+The evaluator can stop early: if score rate on a tested level is below the configured threshold,
+higher levels are skipped (defaults to `0.40`).
+
+Docker run with custom settings:
+
+```bash
+docker compose --profile eval run --rm elo-eval --bot=iterdeep --bot-depth=5 --bot-eval=phased --opponent-kind=rodent --stockfish=/app/engines/rodent --levels=elo:600,elo:800,elo:1000,elo:1200 --games-per-level=12 --output-json=logs/elo-iterdeep.json
+```
+
+Direct script usage:
+
+```bash
+python tools/elo_eval.py --bot=minimax --bot-depth=4 --bot-eval=basic --opponent-kind=komodo --stockfish=/path/to/komodo --levels=elo:600,elo:800,elo:1000,elo:1200 --games-per-level=8 --output-json logs/elo-report.json
+```
+
+PowerShell example:
+
+```powershell
+python .\tools\elo_eval.py --bot iterdeep --bot-depth 5 --bot-eval phased --opponent-kind rodent --stockfish .\engines\rodent.exe --levels elo:600,elo:800,elo:1000,elo:1200 --games-per-level 12 --output-json logs\elo-iterdeep.json
+```
+
+Notes:
+
+- The script alternates colors each game and uses a fixed opponent move time (`--sf-movetime-ms`, default 120 ms) unless `depth:N` or `movetime:N` is used in levels.
+- The evaluator supports multiprocessing with `--parallel-games` (or env `EVAL_PARALLEL_GAMES`).
+- Bot search supports root-level OpenMP parallelism through `BOT_THREADS` (wired via compose env vars above).
+- Every played game can be exported as an individual PGN file (enabled by default via `EVAL_PGN_DIR` / `EVAL_RODENT_PGN_DIR`).
+- For low Elo below Stockfish limits, use Rodent/Komodo as opponent and configure `EVAL_LEVELS` with `elo:N` values.
+- Some Rodent builds expose `UCI_Elo` with a minimum (often 800). Keep Rodent Elo levels at `elo:800` or above.
+- `eval-rodent` now ships with defaults: `elo:800,elo:900,elo:1000,elo:1100,elo:1200,elo:1300,elo:1400` (adjust with `EVAL_RODENT_LEVELS`).
+- Early-stop threshold for Rodent profile is controlled by `EVAL_RODENT_STOP_IF_SCORE_RATE_BELOW`.
+- Per-level report includes W/D/L, score rate, and performance Elo.
+- Final estimate is an overall maximum-likelihood Elo across all tested opponent levels.
+- The bot protocol now supports `go` in `--protocol` mode so automation can play either color.
+
 ## Notes
 
 - Engine depth is controlled by `BOT_DEPTH` (default fallback is 4 when unset/invalid)
